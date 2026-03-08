@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test Result</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Test Submitted Successfully</h1>
+    <div id="result"></div>
+    <a href="/">Back to Home</a>
+  </div>
+  <script>
+    const testId = location.pathname.split('/').pop();
+    const box = document.getElementById('result');
+    fetch(`/api/participant/tests/${testId}/result`).then(r => r.json()).then(data => {
+      if (data.message) return box.textContent = data.message;
+      box.innerHTML = `
+        <p><b>Name:</b> ${data.name}</p>
+        <p><b>Email:</b> ${data.email}</p>
+        <p><b>Total Questions:</b> ${data.totalQuestions}</p>
+        <p><b>Correct:</b> ${data.score}</p>
+        <p><b>Wrong:</b> ${data.wrongAnswers}</p>
+        <p><b>Score:</b> ${data.score} / ${data.totalQuestions}</p>
+        <p><b>Percentage:</b> ${data.percentage}%</p>
+      `;
+    });
+  </script>
+</body>
+</html>

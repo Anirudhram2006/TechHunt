@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Admin Dashboard</h1>
+    <h2>Create Test</h2>
+    <form id="createTestForm">
+      <input name="title" required placeholder="Test Name" />
+      <input name="durationMinutes" type="number" value="30" required placeholder="Duration" />
+      <input name="numberOfQuestions" type="number" value="30" required placeholder="Number of Questions" />
+      <label><input type="checkbox" name="allowAnswerReview" /> Enable answer review after test</label>
+      <button type="submit">Create Test</button>
+    </form>
+    <p id="createMsg"></p>
+
+    <h2>Tests</h2>
+    <div id="tests"></div>
+  </div>
+
+  <script>
+    const testsBox = document.getElementById('tests');
+    const createTestForm = document.getElementById('createTestForm');
+    const createMsg = document.getElementById('createMsg');
+
+    async function fetchJson(url, opts = {}) {
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, data };
+    }
+
+    async function loadTests() {
+      const { ok, data } = await fetchJson('/api/admin/tests');
+      if (!ok) return testsBox.textContent = 'Unauthorized Access';
+      testsBox.innerHTML = '';
+      for (const t of data) {
+        const card = document.createElement('div');
+        card.className = 'notice';
+        card.innerHTML = `
+          <b>${t.title}</b><br/>
+          Test ID: ${t.testId}<br/>
+          Public Link: /test/${t.testId}<br/>
+          Duration: ${t.durationMinutes} mins | Questions: ${t.numberOfQuestions}<br/>
+          <button data-action="participants">View Participants</button>
+          <button data-action="scores">View Scores</button>
+          <button data-action="leaderboard">Leaderboard</button>
+          <button data-action="download">Download CSV</button>
+          <button data-action="edit">Edit</button>
+          <button data-action="delete" style="background:#b91c1c;">Delete</button>
+          <div class="output"></div>
+        `;
+        const out = card.querySelector('.output');
+        card.querySelector('[data-action="participants"]').onclick = async () => {
+          const r = await fetchJson(`/api/admin/tests/${t.testId}/participants`);
+          out.textContent = r.ok ? `Participants: ${r.data.length}` : 'Failed';
+        };
+        card.querySelector('[data-action="scores"]').onclick = async () => {
+          const r = await fetchJson(`/api/admin/tests/${t.testId}/results`);
+          out.innerHTML = r.ok ? r.data.map((x) => `${x.name}: ${x.score}/${x.totalQuestions} (${x.percentage}%)`).join('<br/>') : 'Failed';
+        };
+        card.querySelector('[data-action="leaderboard"]').onclick = async () => {
+          const r = await fetchJson(`/api/admin/tests/${t.testId}/leaderboard`);
+          out.innerHTML = r.ok ? `<b>Top Scores</b><br/>` + r.data.map((x, i) => `${i + 1}. ${x.name} - ${x.score}`).join('<br/>') : 'Failed';
+        };
+        card.querySelector('[data-action="download"]').onclick = () => {
+          window.open(`/api/admin/tests/${t.testId}/results/download`, '_blank');
+        };
+        card.querySelector('[data-action="edit"]').onclick = async () => {
+          const title = prompt('New test name', t.title);
+          if (!title) return;
+          const durationMinutes = Number(prompt('Duration (minutes)', t.durationMinutes));
+          const r = await fetchJson(`/api/admin/tests/${t.testId}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, durationMinutes })
+          });
+          out.textContent = r.ok ? 'Updated' : 'Failed';
+          loadTests();
+        };
+        card.querySelector('[data-action="delete"]').onclick = async () => {
+          if (!confirm('Delete this test?')) return;
+          const r = await fetchJson(`/api/admin/tests/${t.testId}`, { method: 'DELETE' });
+          out.textContent = r.ok ? 'Deleted' : 'Failed';
+          loadTests();
+        };
+        testsBox.appendChild(card);
+      }
+    }
+
+    createTestForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = Object.fromEntries(new FormData(createTestForm).entries());
+      payload.allowAnswerReview = Boolean(new FormData(createTestForm).get('allowAnswerReview'));
+      const { ok, data } = await fetchJson('/api/admin/tests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      createMsg.textContent = ok ? `Created. Share link: ${data.testLink}` : (data.message || 'Failed');
+      if (ok) {
+        createTestForm.reset();
+        loadTests();
+      }
+    });
+
+    loadTests();
+  </script>
+</body>
+</html>
