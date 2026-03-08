@@ -3,6 +3,7 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
+let MongoMemoryServer;
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -316,11 +317,36 @@ app.get('/api/participant/tests/:testId/result', verifyParticipant, async (req, 
 
 app.use((_, res) => res.status(404).send('Not Found'));
 
+async function connectDatabase() {
+  const mode = (process.env.DB_MODE || 'mongo').toLowerCase();
+  if (mode === 'memory') {
+    if (!MongoMemoryServer) {
+      ({ MongoMemoryServer } = require('mongodb-memory-server'));
+    }
+    const memoryServer = await MongoMemoryServer.create();
+    const uri = memoryServer.getUri('techhunt_exam');
+    await mongoose.connect(uri);
+    console.log('Connected to in-memory MongoDB (mongodb-memory-server).');
+    return memoryServer;
+  }
+
+  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/techhunt_exam';
+  await mongoose.connect(uri);
+  console.log(`Connected to MongoDB: ${uri}`);
+  return null;
+}
+
 async function start() {
-  await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/techhunt_exam');
+  const memoryServer = await connectDatabase();
   await setupDefaultAdmin();
   await setupDefaultTest();
   app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
+
+  process.on('SIGINT', async () => {
+    await mongoose.connection.close();
+    if (memoryServer) await memoryServer.stop();
+    process.exit(0);
+  });
 }
 
 start().catch((error) => {

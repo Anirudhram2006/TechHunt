@@ -51,18 +51,33 @@ Secure web-based MCQ exam system for college tests, hackathon screening, and int
 - Results
 - ViolationLogs
 
-## Setup
+## Setup (Windows / Local)
 1. Install dependencies
    ```bash
    npm install
    ```
 2. Configure env
    ```bash
-   cp .env.example .env
+   copy .env.example .env
    ```
-3. Start MongoDB and run
+3. Choose one database mode in `.env`:
+   - `DB_MODE=mongo` + set `MONGO_URI` if you have MongoDB
+   - `DB_MODE=memory` if you **do not have MongoDB** (dev/demo mode using mongodb-memory-server)
+4. Start app
    ```bash
    npm start
    ```
+
+## If you don't have MongoDB
+Set:
+```env
+DB_MODE=memory
+```
+This starts an in-memory MongoDB automatically. No MongoDB installation required, but data is temporary and resets when the app restarts.
+
+## Hosting (quick)
+- Render / Railway / Azure App Service supported.
+- For production, use `DB_MODE=mongo` with MongoDB Atlas.
+- Keep strong `JWT_SECRET` and secure environment variables.
 
 Default admin and demo test are seeded on first boot.
