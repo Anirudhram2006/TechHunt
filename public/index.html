@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCQ Test Registration</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Online MCQ Examination</h1>
+    <p>Enter your details to access your assigned test.</p>
+    <form id="registerForm">
+      <input name="name" placeholder="Full Name" required />
+      <input name="email" type="email" placeholder="Email" required />
+      <input name="testId" placeholder="Test ID (e.g., demo-test)" required />
+      <button type="submit">Start Test</button>
+    </form>
+    <p id="msg"></p>
+  </div>
+  <script>
+    const form = document.getElementById('registerForm');
+    const msg = document.getElementById('msg');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = Object.fromEntries(new FormData(form).entries());
+      const res = await fetch('/api/participant/register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) return msg.textContent = data.message;
+      window.location.href = data.testLink;
+    });
+  </script>
+</body>
+</html>
