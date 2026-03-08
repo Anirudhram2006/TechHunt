@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Secure MCQ Test</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container question-card" oncontextmenu="return false;">
+    <h1 id="title">Loading...</h1>
+    <p>Time Remaining: <span id="timer"></span> | Violations: <span id="violations">0</span></p>
+    <div class="progress"><div id="progressBar" style="width: 0%"></div></div>
+
+    <h2 id="question"></h2>
+    <div id="options"></div>
+    <div style="display:flex;gap:.6rem;">
+      <button id="prevBtn" type="button">Previous</button>
+      <button id="nextBtn" type="button">Next</button>
+      <button id="submitBtn" type="button" style="background:#b91c1c;">Submit Test</button>
+    </div>
+
+    <h3>Question Navigation</h3>
+    <div id="qnav" class="qnav"></div>
+
+    <div class="notice">Anti-cheating enabled: fullscreen, key restrictions, tab/window detection, back/refresh monitoring.</div>
+  </div>
+
+  <script>
+    const testId = location.pathname.split('/').pop();
+    const titleEl = document.getElementById('title');
+    const questionEl = document.getElementById('question');
+    const optionsEl = document.getElementById('options');
+    const timerEl = document.getElementById('timer');
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const progressBar = document.getElementById('progressBar');
+    const violationsEl = document.getElementById('violations');
+    const qnavEl = document.getElementById('qnav');
+
+    let state = { index: 0, questions: [], answers: {}, violations: 0, maxViolations: 3, done: false, allowAnswerReview: false };
+
+    const saveAnswer = async (q, selected) => {
+      state.answers[q] = selected;
+      await fetch(`/api/participant/tests/${testId}/answer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionIndex: q, selectedIndex: selected })
+      });
+    };
+
+    async function postViolation(type) {
+      if (state.done) return;
+      const res = await fetch(`/api/participant/tests/${testId}/violations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type })
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+      state.violations = data.violations;
+      violationsEl.textContent = `${state.violations}/${data.maxViolations}`;
+      if (data.blocked) {
+        alert('Violation limit reached. Test will be auto-submitted.');
+        await submitExam(true);
+      } else {
+        alert(`Warning ${state.violations}: suspicious activity detected.`);
+      }
+    }
+
+    function attachGuards() {
+      document.body.style.userSelect = 'none';
+      history.pushState(null, '', location.href);
+      window.addEventListener('popstate', () => {
+        history.pushState(null, '', location.href);
+        postViolation('back-navigation-attempt');
+      });
+
+      window.addEventListener('beforeunload', (e) => {
+        postViolation('refresh-or-close-attempt');
+        e.preventDefault();
+        e.returnValue = '';
+      });
+
+      document.addEventListener('contextmenu', (e) => e.preventDefault());
+      document.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        const blocked =
+          (e.ctrlKey && ['c', 'v', 'x', 'u', 'a', 'r'].includes(key)) ||
+          (e.ctrlKey && e.shiftKey && key === 'i') ||
+          key === 'f12';
+        if (blocked) {
+          e.preventDefault();
+          postViolation(`blocked-key-${e.key}`);
+        }
+      });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) postViolation('tab-switch'); });
+      window.addEventListener('blur', () => postViolation('window-switch'));
+      document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) postViolation('exit-fullscreen'); });
+    }
+
+    async function startExam() {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen().catch(() => postViolation('fullscreen-denied'));
+      }
+
+      const res = await fetch(`/api/participant/tests/${testId}/start`);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Unauthorized Access');
+        location.href = '/';
+        return;
+      }
+
+      state.questions = data.questions;
+      state.maxViolations = data.maxViolations;
+      state.allowAnswerReview = data.allowAnswerReview;
+      state.answers = data.savedAnswers || {};
+      titleEl.textContent = data.title;
+      violationsEl.textContent = `0/${state.maxViolations}`;
+      renderNav();
+      renderQuestion();
+      startTimer(Number(data.remainingSeconds));
+    }
+
+    function renderNav() {
+      qnavEl.innerHTML = state.questions.map((_, i) => {
+        const active = i === state.index ? 'selected' : '';
+        const answered = state.answers[i] !== undefined ? 'answered' : '';
+        return `<button class="navbtn ${active} ${answered}" data-i="${i}" type="button">${i + 1}</button>`;
+      }).join('');
+      qnavEl.querySelectorAll('.navbtn').forEach((b) => b.onclick = () => {
+        if (!state.allowAnswerReview && Number(b.dataset.i) > state.index) return;
+        state.index = Number(b.dataset.i);
+        renderQuestion();
+      });
+    }
+
+    function renderQuestion() {
+      const q = state.questions[state.index];
+      if (!q) return;
+      questionEl.textContent = `Question ${state.index + 1} of ${state.questions.length}: ${q.prompt}`;
+      progressBar.style.width = `${((state.index + 1) / state.questions.length) * 100}%`;
+      optionsEl.innerHTML = q.options.map((option, idx) => {
+        const selected = Number(state.answers[state.index]) === idx ? 'selected' : '';
+        return `<div class="option ${selected}" data-idx="${idx}">${option}</div>`;
+      }).join('');
+      optionsEl.querySelectorAll('.option').forEach((el) => {
+        el.onclick = async () => {
+          await saveAnswer(state.index, Number(el.dataset.idx));
+          renderQuestion();
+          renderNav();
+        };
+      });
+      prevBtn.disabled = state.index === 0;
+      nextBtn.disabled = state.index === state.questions.length - 1;
+      renderNav();
+    }
+
+    async function submitExam(auto) {
+      if (state.done) return;
+      if (!auto && !confirm('Are you sure you want to submit the test?')) return;
+      state.done = true;
+      const res = await fetch(`/api/participant/tests/${testId}/submit`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers: state.answers, auto })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.message || 'Submission failed');
+      location.href = data.resultPath;
+    }
+
+    function startTimer(seconds) {
+      const tick = setInterval(() => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        timerEl.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        if (seconds <= 0) {
+          clearInterval(tick);
+          submitExam(true);
+        }
+        seconds -= 1;
+      }, 1000);
+    }
+
+    nextBtn.onclick = () => { if (state.index < state.questions.length - 1) { state.index += 1; renderQuestion(); } };
+    prevBtn.onclick = () => { if (state.index > 0) { state.index -= 1; renderQuestion(); } };
+    submitBtn.onclick = () => submitExam(false);
+
+    attachGuards();
+    startExam();
+  </script>
+</body>
+</html>
